@@ -1,0 +1,42 @@
+{
+  "name": "stellar-agent-pay-cli",
+  "version": "0.1.0",
+  "description": "CLI that pays an x402-gated URL from the terminal: 402 -> pay -> unlock, for agents and shell scripts",
+  "type": "module",
+  "license": "MIT",
+  "author": "leocagli",
+  "main": "src/pay.js",
+  "bin": {
+    "stellar-agent-pay": "./bin/cli.js",
+    "stellar-agent-pay-mcp": "./src/mcp.js"
+  },
+  "files": [
+    "src",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "stellar",
+    "x402",
+    "cli",
+    "agent-payments",
+    "mcp"
+  ],
+  "dependencies": {
+    "@x402/core": "^2.20.0",
+    "@x402/fetch": "^2.20.0",
+    "@x402/stellar": "^2.20.0"
+  },
+  "optionalDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.8"
+  }
+}
