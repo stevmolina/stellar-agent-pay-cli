@@ -4,6 +4,7 @@ import { createEd25519Signer } from "@x402/stellar";
 import { ExactStellarScheme } from "@x402/stellar/exact/client";
 import { AgentPayConfigError } from "./errors.js";
 import { usdToBaseUnits } from "./money.js";
+import { withRetry } from "./resilientFetch.js";
 
 /**
  * @typedef {Object} AgentPayOptions
@@ -48,7 +49,10 @@ export function createPaidFetch(opts = {}) {
     );
   }
 
-  return wrapFetchWithPaymentFromConfig(fetch, {
+  // Retry is applied to the *transport* (this base fetch), not around the whole
+  // 402-negotiation flow — see resilientFetch.js for why that distinction matters
+  // (retrying the business-logic layer could sign and submit a second payment).
+  return wrapFetchWithPaymentFromConfig(withRetry(fetch), {
     schemes: [{ network, client: new ExactStellarScheme(signer) }],
     policies,
   });
