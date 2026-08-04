@@ -1,5 +1,5 @@
 import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
-import { decodePaymentResponseHeader } from "@x402/core/http";
+import { decodePaymentResponseHeader, decodePaymentRequiredHeader } from "@x402/core/http";
 import { createEd25519Signer } from "@x402/stellar";
 import { ExactStellarScheme } from "@x402/stellar/exact/client";
 import { AgentPayConfigError } from "./errors.js";
@@ -12,6 +12,37 @@ import { withRetry } from "./resilientFetch.js";
  * @property {string} [secretKey] - Raw S... Stellar secret key. Defaults to STELLAR_SECRET_KEY env.
  * @property {string|number} [maxPriceUsd] - Refuse (filter out) any payment option above this USD amount.
  */
+
+/**
+ * Read a PaymentRequirements' price. The wire-format field is `amount` — confirmed
+ * against a live facilitator response — NOT `maxAmountRequired`, which is a
+ * *different* type in @x402/core (server-side RouteConfig), not this client-side
+ * shape. Kept as a named export + the `?? maxAmountRequired` fallback specifically
+ * because this was shipped wrong once (see test/pay.test.js) and silently filtered
+ * out every payment option regardless of the cap.
+ * @param {Record<string, unknown>} requirement
+ */
+export function amountOf(requirement) {
+  return requirement?.amount ?? requirement?.maxAmountRequired;
+}
+
+/**
+ * An x402 client PaymentPolicy that filters out any option pricier than `capUsd`.
+ * Exported standalone so its field-name handling is unit-testable without a live
+ * facilitator or a signed request.
+ * @param {string|number} capUsd
+ */
+export function buildMaxPricePolicy(capUsd) {
+  const capBaseUnits = usdToBaseUnits(capUsd);
+  return (_x402Version, requirements) =>
+    requirements.filter((r) => {
+      try {
+        return BigInt(amountOf(r)) <= capBaseUnits;
+      } catch {
+        return false;
+      }
+    });
+}
 
 /**
  * Build a payment-aware fetch for a single Stellar signer/network, with an optional
@@ -35,19 +66,7 @@ export function createPaidFetch(opts = {}) {
   // don't pre-wrap with Keypair.fromSecret, it does that internally.
   const signer = createEd25519Signer(secretKey, network);
 
-  const policies = [];
-  if (opts.maxPriceUsd != null) {
-    const capBaseUnits = usdToBaseUnits(opts.maxPriceUsd);
-    policies.push((_x402Version, requirements) =>
-      requirements.filter((r) => {
-        try {
-          return BigInt(r.maxAmountRequired) <= capBaseUnits;
-        } catch {
-          return false;
-        }
-      })
-    );
-  }
+  const policies = opts.maxPriceUsd != null ? [buildMaxPricePolicy(opts.maxPriceUsd)] : [];
 
   // Retry is applied to the *transport* (this base fetch), not around the whole
   // 402-negotiation flow — see resilientFetch.js for why that distinction matters
@@ -70,6 +89,18 @@ export async function peekPaymentRequirements(url, init = {}) {
   const res = await fetch(url, init);
   if (res.status !== 402) {
     return { status: res.status, requirements: null };
+  }
+  // The actual challenge (price, payTo, network, ...) travels in the
+  // PAYMENT-REQUIRED header, base64-encoded — the 402 response body itself is
+  // typically empty (`{}`) unless the route configured a custom unpaidResponseBody.
+  // A body-only implementation here would silently show nothing.
+  const header = res.headers.get("PAYMENT-REQUIRED") ?? res.headers.get("payment-required");
+  if (header) {
+    try {
+      return { status: 402, requirements: decodePaymentRequiredHeader(header) };
+    } catch {
+      // fall through to the body below
+    }
   }
   const body = await res.json().catch(() => null);
   return { status: 402, requirements: body };

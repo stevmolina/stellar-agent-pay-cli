@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { payUrl, peekPaymentRequirements } from "../src/pay.js";
+import { payUrl, peekPaymentRequirements, amountOf } from "../src/pay.js";
 import { AgentPayConfigError } from "../src/errors.js";
 import { baseUnitsToUsd } from "../src/money.js";
 import { logPaymentEvent } from "../src/eventLog.js";
@@ -88,8 +88,9 @@ async function main() {
     process.stdout.write(JSON.stringify(requirements, null, 2) + "\n");
     const accepts = requirements?.accepts ?? [];
     for (const a of accepts) {
-      if (a?.maxAmountRequired) {
-        process.stderr.write(`Would cost ${baseUnitsToUsd(a.maxAmountRequired)} on ${a.network} to ${a.payTo}\n`);
+      const amount = amountOf(a ?? {});
+      if (amount) {
+        process.stderr.write(`Would cost ${baseUnitsToUsd(amount)} on ${a.network} to ${a.payTo}\n`);
       }
     }
     return;
