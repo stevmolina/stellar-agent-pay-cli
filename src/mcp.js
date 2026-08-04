@@ -7,7 +7,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { payUrl, peekPaymentRequirements } from "./pay.js";
+import { payUrl, peekPaymentRequirements, amountOf } from "./pay.js";
 import { baseUnitsToUsd } from "./money.js";
 import { SessionSpendCap, SessionCapExceededError } from "./sessionCap.js";
 
@@ -34,10 +34,10 @@ server.registerTool(
     if (status !== 402) {
       return { content: [{ type: "text", text: `No payment required (status ${status}).` }] };
     }
-    const priced = (requirements?.accepts ?? []).map((a) => ({
-      ...a,
-      priceUsd: a.maxAmountRequired ? baseUnitsToUsd(a.maxAmountRequired) : undefined,
-    }));
+    const priced = (requirements?.accepts ?? []).map((a) => {
+      const amount = amountOf(a);
+      return { ...a, priceUsd: amount ? baseUnitsToUsd(amount) : undefined };
+    });
     return { content: [{ type: "text", text: JSON.stringify({ ...requirements, accepts: priced }, null, 2) }] };
   }
 );
@@ -61,8 +61,9 @@ server.registerTool(
     let reserved = null;
     if (status === 402) {
       const cheapestOffer = (requirements?.accepts ?? [])[0];
-      if (cheapestOffer?.maxAmountRequired) {
-        reserved = BigInt(cheapestOffer.maxAmountRequired);
+      const offerAmount = cheapestOffer && amountOf(cheapestOffer);
+      if (offerAmount) {
+        reserved = BigInt(offerAmount);
         try {
           await sessionCap.reserve(reserved);
         } catch (err) {
