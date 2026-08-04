@@ -74,11 +74,29 @@ stellar-agent-pay http://localhost:3001/weather
 
 ## MCP tool (bonus)
 
-For MCP-aware agents (Claude Code, etc.), the same logic is exposed as three MCP tools instead of shelling out to the CLI:
+For MCP-aware agents (Claude Code, etc.), the same logic is exposed as three MCP tools instead of shelling out to the CLI.
 
-- `peek_paywall` — inspect the price without paying
-- `pay_url` — pay and return the unlocked resource; checks the session cap (below) before signing
-- `session_status` — report cumulative spend and remaining budget for this session
+#### `peek_paywall`
+
+Inspect the price of a 402-gated URL without paying.
+
+| Parameter | Type   | Description                  |
+|-----------|--------|-------------------------------|
+| `url`     | string | The URL to inspect (required) |
+
+#### `pay_url`
+
+Pay a 402-gated URL and return the unlocked resource. Checks the session cap (below) before signing, not after.
+
+| Parameter     | Type   | Description                                                  |
+|---------------|--------|----------------------------------------------------------------|
+| `url`         | string | The URL to pay for (required)                                  |
+| `method`      | string | HTTP method (optional, default `GET`)                          |
+| `maxPriceUsd` | string | Refuse to pay more than this many USD for this one call (optional, e.g. `"0.01"`) |
+
+#### `session_status`
+
+Report cumulative spend and remaining budget for this MCP session. No parameters.
 
 Set `STELLAR_AGENT_PAY_SESSION_CAP_USD` to cap *cumulative* spend across the whole MCP session (see [Safety](#safety---max-price-and-session-caps) above) — this is the one thing the one-shot CLI structurally can't do.
 
