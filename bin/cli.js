@@ -15,6 +15,8 @@ Options:
   --data <json>       Request body, sent as JSON (implies Content-Type: application/json)
   --header <K: V>     Extra request header. Repeatable.
   --max-price <usd>   Refuse to pay more than this (e.g. --max-price 0.01). Fails closed.
+  --allow-recipient <G...>  Only pay this recipient. Repeatable. Fails closed if none match.
+  --block-recipient <G...>  Never pay this recipient, even if otherwise valid. Repeatable.
   --dry-run           Show the payment requirements without paying.
   --network <id>      CAIP-2 network id (default: STELLAR_NETWORK env or stellar:testnet)
   --secret <S...>     Stellar secret key (default: STELLAR_SECRET_KEY env)
@@ -28,6 +30,7 @@ Examples:
   stellar-agent-pay https://api.example.com/weather
   stellar-agent-pay https://api.example.com/weather --dry-run
   stellar-agent-pay https://api.example.com/weather --max-price 0.01
+  stellar-agent-pay https://api.example.com/weather --allow-recipient GRECIPIENT...
   stellar-agent-pay https://api.example.com/report --method POST --data '{"city":"BA"}'
   stellar-agent-pay https://api.example.com/weather --log-file ~/.stellar-agent-pay/payments.jsonl
 `;
@@ -53,6 +56,8 @@ async function main() {
       data: { type: "string" },
       header: { type: "string", multiple: true, default: [] },
       "max-price": { type: "string" },
+      "allow-recipient": { type: "string", multiple: true, default: [] },
+      "block-recipient": { type: "string", multiple: true, default: [] },
       "dry-run": { type: "boolean", default: false },
       network: { type: "string" },
       secret: { type: "string" },
@@ -103,6 +108,8 @@ async function main() {
       network: values.network,
       secretKey: values.secret,
       maxPriceUsd: values["max-price"],
+      allowRecipients: values["allow-recipient"],
+      blockRecipients: values["block-recipient"],
     }));
   } catch (err) {
     logPaymentEvent(values["log-file"], { url, method: values.method, paid: false, error: err.message });

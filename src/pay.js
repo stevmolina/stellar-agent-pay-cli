@@ -11,6 +11,8 @@ import { withRetry } from "./resilientFetch.js";
  * @property {string} [network] - CAIP-2 network id. Defaults to STELLAR_NETWORK env or "stellar:testnet".
  * @property {string} [secretKey] - Raw S... Stellar secret key. Defaults to STELLAR_SECRET_KEY env.
  * @property {string|number} [maxPriceUsd] - Refuse (filter out) any payment option above this USD amount.
+ * @property {string[]} [allowRecipients] - If set, only pay a payTo in this list.
+ * @property {string[]} [blockRecipients] - Never pay a payTo in this list, even if otherwise valid.
  */
 
 /**
@@ -45,6 +47,26 @@ export function buildMaxPricePolicy(capUsd) {
 }
 
 /**
+ * An x402 client PaymentPolicy that only allows (or blocks) specific `payTo`
+ * recipients — the same shape of guardrail as a recipient/contract allow-list
+ * on an on-chain policy signer, applied here at the app level in front of a
+ * protocol that doesn't (yet) have a shipped on-chain equivalent for Stellar.
+ * A block-list entry always wins over an allow-list match, so you can't
+ * accidentally allow-list your way past a known-bad address.
+ * @param {{ allow?: string[], block?: string[] }} opts
+ */
+export function buildRecipientPolicy({ allow, block } = {}) {
+  const allowSet = allow?.length ? new Set(allow) : null;
+  const blockSet = block?.length ? new Set(block) : null;
+  return (_x402Version, requirements) =>
+    requirements.filter((r) => {
+      if (blockSet?.has(r.payTo)) return false;
+      if (allowSet && !allowSet.has(r.payTo)) return false;
+      return true;
+    });
+}
+
+/**
  * Build a payment-aware fetch for a single Stellar signer/network, with an optional
  * safety cap so an unattended agent never pays more than it was told to.
  *
@@ -66,7 +88,11 @@ export function createPaidFetch(opts = {}) {
   // don't pre-wrap with Keypair.fromSecret, it does that internally.
   const signer = createEd25519Signer(secretKey, network);
 
-  const policies = opts.maxPriceUsd != null ? [buildMaxPricePolicy(opts.maxPriceUsd)] : [];
+  const policies = [];
+  if (opts.maxPriceUsd != null) policies.push(buildMaxPricePolicy(opts.maxPriceUsd));
+  if (opts.allowRecipients?.length || opts.blockRecipients?.length) {
+    policies.push(buildRecipientPolicy({ allow: opts.allowRecipients, block: opts.blockRecipients }));
+  }
 
   // Retry is applied to the *transport* (this base fetch), not around the whole
   // 402-negotiation flow — see resilientFetch.js for why that distinction matters
@@ -114,8 +140,8 @@ export async function peekPaymentRequirements(url, init = {}) {
  * @returns {Promise<{ response: Response, settlement: unknown }>}
  */
 export async function payUrl(url, options = {}) {
-  const { network, secretKey, maxPriceUsd, ...init } = options;
-  const fetchWithPayment = createPaidFetch({ network, secretKey, maxPriceUsd });
+  const { network, secretKey, maxPriceUsd, allowRecipients, blockRecipients, ...init } = options;
+  const fetchWithPayment = createPaidFetch({ network, secretKey, maxPriceUsd, allowRecipients, blockRecipients });
   const response = await fetchWithPayment(url, init);
 
   let settlement = null;
