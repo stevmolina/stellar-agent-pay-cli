@@ -8,6 +8,8 @@ stellar-agent-pay https://api.example.com/weather
 
 That's the whole interaction. Any agent or shell script that can run a binary can now pay for API access — no custody logic, no manual transaction building.
 
+**Contents:** [Install](#install) · [Setup](#setup) · [Usage](#usage) · [Proof of work](#proof-of-work) · [Safety](#safety---max-price-and-session-caps) · [Demo pairing](#demo-pair-it-with-stellar-x402-paywall-kit) · [MCP tool](#mcp-tool-bonus) · [Testnet runbook](#testnet-runbook) · [Testing](#testing) · [Troubleshooting](#troubleshooting)
+
 ## Install
 
 ```bash
@@ -56,6 +58,17 @@ stellar-agent-pay https://api.example.com/weather | jq .temp
 ```
 
 Exit codes: `0` success, `1` config error (missing URL/secret/malformed flag), `2` payment or HTTP error (including "every offer exceeded --max-price").
+
+## Proof of work
+
+Real payments on Stellar testnet, made by this exact CLI against the sibling repo's example server — not mocked, not simulated. Verify any of them on [Stellar Expert](https://stellar.expert/explorer/testnet):
+
+| tx hash | command |
+|---|---|
+| [`d8adef29...ee7e14fe`](https://stellar.expert/explorer/testnet/tx/d8adef2991af899cbf1009d06e8a428199f7b642ab65948c3fabbf70ee7e14fe) | `stellar-agent-pay http://localhost:3001/weather` |
+| [`4b0524e7...cdab979b83`](https://stellar.expert/explorer/testnet/tx/4b0524e754703b99237558f94cc5b89e74e2e4ee3aa2d99d7b9527cdab979b83) | `stellar-agent-pay http://localhost:3001/weather --max-price 0.01` |
+| [`3ee14d47...9fed611`](https://stellar.expert/explorer/testnet/tx/3ee14d47ee8ae5b3e4eb374ddb178f108d72e63c262244cce68a563fb9fed611) | `stellar-agent-pay http://localhost:3001/weather/premium` |
+| [`bd0f08a6...27018d576`](https://stellar.expert/explorer/testnet/tx/bd0f08a604ca6cb38ebcde8c20c441523e5c750233a1ec87f3060d427018d576) | `stellar-agent-pay http://localhost:3001/weather --allow-recipient G...` |
 
 ## Safety: `--max-price` and session caps
 
@@ -146,10 +159,10 @@ npm install stellar-agent-pay-cli @modelcontextprotocol/sdk zod
 ## Testing
 
 ```bash
-npm test   # node --test — no network calls, no live facilitator or funded account needed
+npm test   # node --test — 18/18, no network calls, no live facilitator or funded account needed
 ```
 
-`test/e2e.test.js` runs a *real* payment against the OZ Channels testnet facilitator instead of a mock — it's skipped automatically unless `OZ_API_KEY` + a funded `STELLAR_SECRET_KEY`/recipient are set, so it never breaks `npm test` for anyone without a funded account.
+The sibling repo, [`stellar-x402-paywall-kit`](https://github.com/leocagli/stellar-x402-paywall-kit), has its own `test/e2e.test.js` that runs a *real* payment through this CLI's underlying logic against the live OZ Channels testnet facilitator — skipped automatically without credentials, so it never breaks CI for anyone without a funded account. See [Proof of work](#proof-of-work) below for the transaction it produced.
 
 ## Troubleshooting
 
