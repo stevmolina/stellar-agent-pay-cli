@@ -41,6 +41,12 @@ stellar-agent-pay https://api.example.com/weather --header "X-Trace: 1" --json
 
 # Structured JSONL audit trail — one line per attempt, timestamp/url/status/amount/tx
 stellar-agent-pay https://api.example.com/weather --log-file ~/.stellar-agent-pay/payments.jsonl
+
+# Only pay a known-good recipient — fails closed if the server's payTo isn't on the list
+stellar-agent-pay https://api.example.com/weather --allow-recipient GRECIPIENT...
+
+# Never pay a specific recipient, even if the price/route otherwise looks fine
+stellar-agent-pay https://api.example.com/weather --block-recipient GBADACTOR...
 ```
 
 Settlement info (tx hash, network) goes to **stderr**; the response body goes to **stdout** — safe to pipe into `jq` or another agent step without noise:
@@ -56,6 +62,10 @@ Exit codes: `0` success, `1` config error (missing URL/secret/malformed flag), `
 x402 lets a server name its price per-request. For an unattended agent, that's a blank check unless something caps it. `--max-price` registers an [x402 client policy](https://github.com/x402-foundation/x402) that filters out any payment option above the cap *before* a payment is ever built — if nothing survives the filter, the request fails closed instead of silently paying whatever was asked.
 
 The x402 "exact" scheme is intentionally one-shot/per-request; there's no protocol-native way to cap *cumulative* spend across many calls. The one-shot CLI can't track that (each invocation is a fresh process) — but the [MCP server](#mcp-tool-bonus) is long-lived across a whole agent session, so it adds `STELLAR_AGENT_PAY_SESSION_CAP_USD`: a running-total budget checked *before* each payment is signed, not after. Concurrent tool calls are serialized internally (`src/sessionCap.js`) so two simultaneous payments can't both pass the check before either is recorded — the same race a naive per-request-only cap is exposed to. This is an app-level approximation, not an atomic on-chain guarantee; for a session budget with a real on-chain guarantee (pre-authorized deposit, cumulative commitments, one settlement), that's what MPP **Channel mode** is for instead of x402 — see the `stellar-agentic-payments` skill.
+
+### Recipient allow/block-lists
+
+`--allow-recipient` / `--block-recipient` (both repeatable) filter by the server's `payTo` before a payment is ever built — a block-list entry always wins, so you can't allow-list your way past a known-bad address by mistake. This is the same guardrail shape as a contract/recipient allow-list on an on-chain policy signer, applied here at the app level since x402 on Stellar doesn't (yet) ship one. It extends design thinking from [ArkivGate](https://arkivgate.vercel.app) — a policy gateway for paid AI-agent runtimes the author built independently (x402 payment-intent review + wallet threat-intel + auditable evidence graph on Arkiv) — reimplemented fresh here for Stellar's client-side `PaymentPolicy` API, not ported code.
 
 ### Known gaps (documented, not hidden)
 
@@ -100,6 +110,8 @@ Report cumulative spend and remaining budget for this MCP session. No parameters
 
 Set `STELLAR_AGENT_PAY_SESSION_CAP_USD` to cap *cumulative* spend across the whole MCP session (see [Safety](#safety---max-price-and-session-caps) above) — this is the one thing the one-shot CLI structurally can't do.
 
+`STELLAR_AGENT_PAY_ALLOW_RECIPIENTS` / `STELLAR_AGENT_PAY_BLOCK_RECIPIENTS` (comma-separated `G...` addresses) apply to every `pay_url` call automatically. These are deliberately **environment-set, not tool parameters** — the calling agent picks *what* to buy, but doesn't get to decide which recipient guardrails apply to it; that's the operator's call, made once at launch.
+
 ```bash
 npm install stellar-agent-pay-cli @modelcontextprotocol/sdk zod
 ```
@@ -112,7 +124,8 @@ npm install stellar-agent-pay-cli @modelcontextprotocol/sdk zod
       "env": {
         "STELLAR_NETWORK": "stellar:testnet",
         "STELLAR_SECRET_KEY": "S...",
-        "STELLAR_AGENT_PAY_SESSION_CAP_USD": "1.00"
+        "STELLAR_AGENT_PAY_SESSION_CAP_USD": "1.00",
+        "STELLAR_AGENT_PAY_BLOCK_RECIPIENTS": "GBADACTOR1...,GBADACTOR2..."
       }
     }
   }

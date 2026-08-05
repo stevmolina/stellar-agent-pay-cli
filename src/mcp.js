@@ -19,6 +19,21 @@ const server = new McpServer({ name: "stellar-agent-pay", version: "0.1.0" });
 // see sessionCap.js for why this is app-level, not a protocol guarantee.
 const sessionCap = new SessionSpendCap(process.env.STELLAR_AGENT_PAY_SESSION_CAP_USD ?? null);
 
+// Recipient allow/block-lists are operator policy, set once via env when the MCP
+// server is launched — not a per-call tool parameter the calling agent could just
+// omit. That's the same trust boundary a real policy signer enforces: the agent
+// decides *what* to buy, not which guardrails apply to it.
+function parseAddressList(env) {
+  return env
+    ? env
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+}
+const allowRecipients = parseAddressList(process.env.STELLAR_AGENT_PAY_ALLOW_RECIPIENTS);
+const blockRecipients = parseAddressList(process.env.STELLAR_AGENT_PAY_BLOCK_RECIPIENTS);
+
 server.registerTool(
   "peek_paywall",
   {
@@ -76,7 +91,7 @@ server.registerTool(
     }
 
     try {
-      const { response, settlement } = await payUrl(url, { method, maxPriceUsd });
+      const { response, settlement } = await payUrl(url, { method, maxPriceUsd, allowRecipients, blockRecipients });
       const text = await response.text();
       return {
         content: [

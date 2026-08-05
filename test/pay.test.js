@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createPaidFetch, buildMaxPricePolicy, amountOf } from "../src/pay.js";
+import { createPaidFetch, buildMaxPricePolicy, buildRecipientPolicy, amountOf } from "../src/pay.js";
 import { AgentPayConfigError } from "../src/errors.js";
 import { usdToBaseUnits } from "../src/money.js";
 
@@ -61,4 +61,33 @@ test("buildMaxPricePolicy cap matches usdToBaseUnits exactly (boundary check)", 
   const policy = buildMaxPricePolicy("0.001");
   const atCap = usdToBaseUnits("0.001").toString();
   assert.deepEqual(policy(2, [{ amount: atCap }]).length, 1);
+});
+
+test("buildRecipientPolicy with no allow/block lists keeps everything", () => {
+  const policy = buildRecipientPolicy({});
+  const requirements = [{ payTo: "GAAA" }, { payTo: "GBBB" }];
+  assert.deepEqual(policy(2, requirements), requirements);
+});
+
+test("buildRecipientPolicy allow-list only keeps listed recipients", () => {
+  const policy = buildRecipientPolicy({ allow: ["GAAA"] });
+  const kept = policy(2, [{ payTo: "GAAA" }, { payTo: "GBBB" }]);
+  assert.deepEqual(
+    kept.map((r) => r.payTo),
+    ["GAAA"]
+  );
+});
+
+test("buildRecipientPolicy block-list drops listed recipients", () => {
+  const policy = buildRecipientPolicy({ block: ["GBBB"] });
+  const kept = policy(2, [{ payTo: "GAAA" }, { payTo: "GBBB" }]);
+  assert.deepEqual(
+    kept.map((r) => r.payTo),
+    ["GAAA"]
+  );
+});
+
+test("buildRecipientPolicy: block always wins over allow, even for the same address", () => {
+  const policy = buildRecipientPolicy({ allow: ["GAAA"], block: ["GAAA"] });
+  assert.deepEqual(policy(2, [{ payTo: "GAAA" }]), []);
 });
