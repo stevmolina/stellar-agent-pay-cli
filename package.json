@@ -4,6 +4,17 @@
   "description": "CLI that pays an x402-gated URL from the terminal: 402 -> pay -> unlock, for agents and shell scripts",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StevenMolina22/stellar-agent-pay-cli.git"
+  },
+  "homepage": "https://github.com/StevenMolina22/stellar-agent-pay-cli#readme",
+  "bugs": {
+    "url": "https://github.com/StevenMolina22/stellar-agent-pay-cli/issues"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "author": "leocagli",
   "main": "src/pay.js",
   "bin": {
