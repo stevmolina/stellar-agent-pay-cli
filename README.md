@@ -1,6 +1,6 @@
 # stellar-agent-pay-cli
 
-A CLI that pays an [x402](https://github.com/x402-foundation/x402)-gated URL from the terminal: **402 → pay → unlock**, one command. Built for the GrantFox Stellar Builder Summit SP 2026 bounty — sub-lane 3B (CLI Plugins for Agents) — and pairs with [`stellar-x402-paywall-kit`](https://github.com/leocagli/stellar-x402-paywall-kit) (sub-lane 3A) for a full end-to-end demo: gate a route with the kit, pay it with this CLI.
+A CLI that pays an [x402](https://github.com/x402-foundation/x402)-gated URL from the terminal: **402 → pay → unlock**, one command. Built for the GrantFox Stellar Builder Summit SP 2026 bounty — sub-lane 3B (CLI Plugins for Agents) — and pairs with [`stellar-x402-paywall-kit`](https://github.com/StevenMolina22/stellar-x402-paywall-kit) (sub-lane 3A) for a full end-to-end demo: gate a route with the kit, pay it with this CLI.
 
 ```bash
 stellar-agent-pay https://api.example.com/weather
@@ -82,7 +82,7 @@ The x402 "exact" scheme is intentionally one-shot/per-request; there's no protoc
 
 ### Known gaps (documented, not hidden)
 
-- **Replay / double-grant on the seller side**: a signed x402 payment auth entry is valid until its `max_ledger` expiration, which bounds *how long* it's valid, not whether it's been redeemed once already. Research on x402 deployments has found resource servers that grant access repeatedly for a single settlement when they don't track "this payment has already been claimed" ([Five Attacks on x402, arXiv:2605.11781](https://arxiv.org/html/2605.11781v1)). This CLI is the buyer side and doesn't control that — if you're building the seller, see the security note in [`stellar-x402-paywall-kit`](https://github.com/leocagli/stellar-x402-paywall-kit)'s README.
+- **Replay / double-grant on the seller side**: a signed x402 payment auth entry is valid until its `max_ledger` expiration, which bounds *how long* it's valid, not whether it's been redeemed once already. Research on x402 deployments has found resource servers that grant access repeatedly for a single settlement when they don't track "this payment has already been claimed" ([Five Attacks on x402, arXiv:2605.11781](https://arxiv.org/html/2605.11781v1)). This CLI is the buyer side and doesn't control that — if you're building the seller, see the security note in [`stellar-x402-paywall-kit`](https://github.com/StevenMolina22/stellar-x402-paywall-kit)'s README.
 - **Facilitator settle dedup is unverified for Stellar**: whether OZ Channels' `/settle` endpoint deduplicates a retried submission of the same auth entry isn't documented anywhere we could find for the Stellar scheme. This is why this CLI's own retry (`src/resilientFetch.js`) is scoped to the *transport* layer only (retrying a dropped connection mid-request), never to re-running the whole payment flow — that distinction is the difference between "retry a delivery" and "sign and submit a second payment."
 
 ## Demo: pair it with `stellar-x402-paywall-kit`
@@ -162,7 +162,7 @@ npm install stellar-agent-pay-cli @modelcontextprotocol/sdk zod
 npm test   # node --test — 18/18, no network calls, no live facilitator or funded account needed
 ```
 
-The sibling repo, [`stellar-x402-paywall-kit`](https://github.com/leocagli/stellar-x402-paywall-kit), has its own `test/e2e.test.js` that runs a *real* payment through this CLI's underlying logic against the live OZ Channels testnet facilitator — skipped automatically without credentials, so it never breaks CI for anyone without a funded account. See [Proof of work](#proof-of-work) below for the transaction it produced.
+The sibling repo, [`stellar-x402-paywall-kit`](https://github.com/StevenMolina22/stellar-x402-paywall-kit), has its own `test/e2e.test.js` that runs a *real* payment through this CLI's underlying logic against the live OZ Channels testnet facilitator — skipped automatically without credentials, so it never breaks CI for anyone without a funded account. See [Proof of work](#proof-of-work) below for the transaction it produced.
 
 ## Troubleshooting
 
