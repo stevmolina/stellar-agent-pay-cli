@@ -8,7 +8,7 @@
     "type": "git",
     "url": "git+https://github.com/StevenMolina22/stellar-agent-pay-cli.git"
   },
-  "homepage": "https://github.com/StevenMolina22/stellar-agent-pay-cli#readme",
+  "homepage": "https://stellar-agent-pay-cli.vercel.app",
   "bugs": {
     "url": "https://github.com/StevenMolina22/stellar-agent-pay-cli/issues"
   },

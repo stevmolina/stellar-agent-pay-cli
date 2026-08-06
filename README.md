@@ -3,6 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/stellar-agent-pay-cli.svg)](https://www.npmjs.com/package/stellar-agent-pay-cli)
 [![license](https://img.shields.io/npm/l/stellar-agent-pay-cli.svg)](LICENSE)
 [![node](https://img.shields.io/node/v/stellar-agent-pay-cli.svg)](https://nodejs.org)
+[![site](https://img.shields.io/badge/site-stellar--agent--pay--cli.vercel.app-FF6C4C)](https://stellar-agent-pay-cli.vercel.app)
 
 Pay an [x402](https://github.com/x402-foundation/x402)-gated URL from the terminal. One command does the whole loop: **402, pay, unlock**.
 
