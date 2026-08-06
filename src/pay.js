@@ -1,4 +1,5 @@
-import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
+import { wrapFetchWithPayment } from "@x402/fetch";
+import { x402Client } from "@x402/core/client";
 import { decodePaymentResponseHeader, decodePaymentRequiredHeader } from "@x402/core/http";
 import { createEd25519Signer } from "@x402/stellar";
 import { ExactStellarScheme } from "@x402/stellar/exact/client";
@@ -13,6 +14,13 @@ import { withRetry } from "./resilientFetch.js";
  * @property {string|number} [maxPriceUsd] - Refuse (filter out) any payment option above this USD amount.
  * @property {string[]} [allowRecipients] - If set, only pay a payTo in this list.
  * @property {string[]} [blockRecipients] - Never pay a payTo in this list, even if otherwise valid.
+ * @property {(context: {paymentRequired: object, selectedRequirements: object}) => Promise<void | {abort: true, reason: string}>} [onBeforePayment]
+ *   Called once the client has chosen which offer to pay, and before anything is signed.
+ *   Return `{ abort, reason }` to refuse. This is the only place that sees the offer
+ *   actually being paid, which is why the session cap hooks in here (see spendGuard.js).
+ * @property {(context: {paymentRequired: object, error: Error}) => Promise<void>} [onPaymentFailure]
+ *   Called if building the signed payload throws, which is the one failure that
+ *   definitely means no money moved.
  */
 
 /**
@@ -94,13 +102,25 @@ export function createPaidFetch(opts = {}) {
     policies.push(buildRecipientPolicy({ allow: opts.allowRecipients, block: opts.blockRecipients }));
   }
 
-  // Retry is applied to the *transport* (this base fetch), not around the whole
-  // 402-negotiation flow — see resilientFetch.js for why that distinction matters
-  // (retrying the business-logic layer could sign and submit a second payment).
-  return wrapFetchWithPaymentFromConfig(withRetry(fetch), {
+  // Built explicitly rather than via wrapFetchWithPaymentFromConfig (which is just
+  // fromConfig + wrapFetchWithPayment) because the config object has no slot for
+  // hooks, and onBeforePayment is the only way to see which offer actually won.
+  const client = x402Client.fromConfig({
     schemes: [{ network, client: new ExactStellarScheme(signer) }],
     policies,
   });
+
+  if (opts.onBeforePayment) {
+    client.onBeforePaymentCreation(opts.onBeforePayment);
+  }
+  if (opts.onPaymentFailure) {
+    client.onPaymentCreationFailure(opts.onPaymentFailure);
+  }
+
+  // Retry is applied to the *transport* (this base fetch), not around the whole
+  // 402-negotiation flow. See resilientFetch.js for why that distinction matters
+  // (retrying the business-logic layer could sign and submit a second payment).
+  return wrapFetchWithPayment(withRetry(fetch), client);
 }
 
 /**
@@ -135,13 +155,46 @@ export async function peekPaymentRequirements(url, init = {}) {
 /**
  * Complete the 402 -> pay -> unlock loop for a single URL.
  *
+ * Returns `amountPaid` in base units, captured from the offer the client selected.
+ * It is not read off the settlement: a real PAYMENT-RESPONSE from OZ Channels carries
+ * `{success, payer, transaction, network}` and no amount at all, so anything reporting
+ * `settlement.amount` records undefined forever (which is what the JSONL audit trail
+ * used to do). The selected offer is the only place the price is actually known.
+ *
  * @param {string} url
  * @param {RequestInit & AgentPayOptions} [options]
- * @returns {Promise<{ response: Response, settlement: unknown }>}
+ * @returns {Promise<{ response: Response, settlement: unknown, amountPaid: string|null }>}
  */
 export async function payUrl(url, options = {}) {
-  const { network, secretKey, maxPriceUsd, allowRecipients, blockRecipients, ...init } = options;
-  const fetchWithPayment = createPaidFetch({ network, secretKey, maxPriceUsd, allowRecipients, blockRecipients });
+  const {
+    network,
+    secretKey,
+    maxPriceUsd,
+    allowRecipients,
+    blockRecipients,
+    onBeforePayment,
+    onPaymentFailure,
+    ...init
+  } = options;
+  // Records the price of the offer the client chose, then defers to the caller's own
+  // hook (so a spend guard can still refuse). Runs first so the amount is captured
+  // even when the guard goes on to abort.
+  let amountPaid = null;
+  const recordThenDelegate = async (context) => {
+    const amount = amountOf(context.selectedRequirements ?? {});
+    if (amount != null) amountPaid = String(amount);
+    return onBeforePayment ? onBeforePayment(context) : undefined;
+  };
+
+  const fetchWithPayment = createPaidFetch({
+    network,
+    secretKey,
+    maxPriceUsd,
+    allowRecipients,
+    blockRecipients,
+    onBeforePayment: recordThenDelegate,
+    onPaymentFailure,
+  });
   const response = await fetchWithPayment(url, init);
 
   let settlement = null;
@@ -154,5 +207,5 @@ export async function payUrl(url, options = {}) {
     }
   }
 
-  return { response, settlement };
+  return { response, settlement, amountPaid };
 }

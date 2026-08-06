@@ -39,6 +39,7 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@x402/express": "^2.20.0",
     "express": "^5.2.1",
+    "stellar-x402-paywall-kit": "file:../stellar-x402-paywall-kit",
     "zod": "^3.23.8"
   }
 }

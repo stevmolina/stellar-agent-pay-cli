@@ -18,9 +18,14 @@ export class SessionCapExceededError extends Error {
  * guarantee, see MPP Channel mode (pre-authorized deposit + cumulative off-chain
  * commitments + single settlement) in the `stellar-agentic-payments` skill.
  *
- * `reserve()`/`commit()`/`release()` are serialized through an internal queue so
+ * `reserve()` and `release()` are serialized through an internal queue so
  * concurrent calls on the same instance can't both pass the check before either
  * records its spend (the same race the per-request --max-price filter is exposed to).
+ *
+ * Reservation is optimistic: `reserve()` records the spend immediately, and
+ * `release()` gives it back if the payment provably never happened. There is no
+ * separate commit step, so a successful reserve is already the record of spend.
+ * See spendGuard.js for what decides when a release is safe.
  */
 export class SessionSpendCap {
   #capBaseUnits;
@@ -32,6 +37,11 @@ export class SessionSpendCap {
    */
   constructor(capUsd) {
     this.#capBaseUnits = capUsd != null ? usdToBaseUnits(capUsd) : null;
+  }
+
+  /** Whether a cap is actually configured, as opposed to unlimited spend. */
+  get hasCap() {
+    return this.#capBaseUnits != null;
   }
 
   #serialize(fn) {

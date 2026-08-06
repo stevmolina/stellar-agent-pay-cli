@@ -69,12 +69,16 @@ Real payments on Stellar testnet, made by this exact CLI against the sibling rep
 | [`4b0524e7...cdab979b83`](https://stellar.expert/explorer/testnet/tx/4b0524e754703b99237558f94cc5b89e74e2e4ee3aa2d99d7b9527cdab979b83) | `stellar-agent-pay http://localhost:3001/weather --max-price 0.01` |
 | [`3ee14d47...9fed611`](https://stellar.expert/explorer/testnet/tx/3ee14d47ee8ae5b3e4eb374ddb178f108d72e63c262244cce68a563fb9fed611) | `stellar-agent-pay http://localhost:3001/weather/premium` |
 | [`bd0f08a6...27018d576`](https://stellar.expert/explorer/testnet/tx/bd0f08a604ca6cb38ebcde8c20c441523e5c750233a1ec87f3060d427018d576) | `stellar-agent-pay http://localhost:3001/weather --allow-recipient G...` |
+| [`c5917913...e6f06cd8`](https://stellar.expert/explorer/testnet/tx/c59179133c0d32aa86780ce0b741edb9264ecc05b6effc13830d0ff7e6f06cd8) | `stellar-agent-pay http://localhost:3002/catalog --max-price 0.01` |
+| [`8c2eca1e...c55d3333b`](https://stellar.expert/explorer/testnet/tx/8c2eca1ec298e5aa1a63057b5b83617d7e42b35166ff48ec2572459c55d3333b) | `stellar-agent-pay http://localhost:3002/reports/3 --max-price 0.01` |
 
 ## Safety: `--max-price` and session caps
 
 x402 lets a server name its price per-request. For an unattended agent, that's a blank check unless something caps it. `--max-price` registers an [x402 client policy](https://github.com/x402-foundation/x402) that filters out any payment option above the cap *before* a payment is ever built — if nothing survives the filter, the request fails closed instead of silently paying whatever was asked.
 
-The x402 "exact" scheme is intentionally one-shot/per-request; there's no protocol-native way to cap *cumulative* spend across many calls. The one-shot CLI can't track that (each invocation is a fresh process) — but the [MCP server](#mcp-tool-bonus) is long-lived across a whole agent session, so it adds `STELLAR_AGENT_PAY_SESSION_CAP_USD`: a running-total budget checked *before* each payment is signed, not after. Concurrent tool calls are serialized internally (`src/sessionCap.js`) so two simultaneous payments can't both pass the check before either is recorded — the same race a naive per-request-only cap is exposed to. This is an app-level approximation, not an atomic on-chain guarantee; for a session budget with a real on-chain guarantee (pre-authorized deposit, cumulative commitments, one settlement), that's what MPP **Channel mode** is for instead of x402 — see the `stellar-agentic-payments` skill.
+The x402 "exact" scheme is intentionally one-shot/per-request; there's no protocol-native way to cap *cumulative* spend across many calls. The one-shot CLI can't track that (each invocation is a fresh process) — but the [MCP server](#mcp-tool-bonus) is long-lived across a whole agent session, so it adds `STELLAR_AGENT_PAY_SESSION_CAP_USD`: a running-total budget checked *before* each payment is signed, not after. Concurrent tool calls are serialized internally (`src/sessionCap.js`) so two simultaneous payments can't both pass the check before either is recorded — the same race a naive per-request-only cap is exposed to.
+
+The cap is enforced from inside the payment flow, on the x402 client's `onBeforePaymentCreation` hook (`src/spendGuard.js`), which fires once the client has chosen which offer it will pay and before the scheme signs anything. That placement is the whole design: it is the only point where the price is known for certain. Checking a separately fetched price first, then paying, means two independent negotiations that can disagree about which offer is being bought, and `accepts` has no defined price ordering to make the first one safe to assume. Refusing here costs no transaction and no fee, and leaves nothing to roll back. This is an app-level approximation, not an atomic on-chain guarantee; for a session budget with a real on-chain guarantee (pre-authorized deposit, cumulative commitments, one settlement), that's what MPP **Channel mode** is for instead of x402 — see the `stellar-agentic-payments` skill.
 
 ### Recipient allow/block-lists
 
@@ -83,6 +87,7 @@ The x402 "exact" scheme is intentionally one-shot/per-request; there's no protoc
 ### Known gaps (documented, not hidden)
 
 - **Replay / double-grant on the seller side**: a signed x402 payment auth entry is valid until its `max_ledger` expiration, which bounds *how long* it's valid, not whether it's been redeemed once already. Research on x402 deployments has found resource servers that grant access repeatedly for a single settlement when they don't track "this payment has already been claimed" ([Five Attacks on x402, arXiv:2605.11781](https://arxiv.org/html/2605.11781v1)). This CLI is the buyer side and doesn't control that — if you're building the seller, see the security note in [`stellar-x402-paywall-kit`](https://github.com/StevenMolina22/stellar-x402-paywall-kit)'s README.
+- **A settled payment doesn't tell you what it cost**: a live `PAYMENT-RESPONSE` from OZ Channels decodes to `{success, payer, transaction, network}`, with no amount field (pinned by a live test in `test/e2e.test.js`, so it fails loudly if that ever changes). Anything reporting `settlement.amount` therefore records `undefined` on every payment, which is what this CLI's own audit log quietly did until it was caught by that test. The price is only reliably knowable from the offer the client selected, which is why `payUrl` returns `amountPaid` from there instead. If you build on this, don't trust a settlement to price itself.
 - **Facilitator settle dedup is unverified for Stellar**: whether OZ Channels' `/settle` endpoint deduplicates a retried submission of the same auth entry isn't documented anywhere we could find for the Stellar scheme. This is why this CLI's own retry (`src/resilientFetch.js`) is scoped to the *transport* layer only (retrying a dropped connection mid-request), never to re-running the whole payment flow — that distinction is the difference between "retry a delivery" and "sign and submit a second payment."
 
 ## Demo: pair it with `stellar-x402-paywall-kit`
@@ -159,10 +164,18 @@ npm install stellar-agent-pay-cli @modelcontextprotocol/sdk zod
 ## Testing
 
 ```bash
-npm test   # node --test — 18/18, no network calls, no live facilitator or funded account needed
+npm test   # node --test, 55 offline tests: no network, no facilitator, no funded account
 ```
 
-The sibling repo, [`stellar-x402-paywall-kit`](https://github.com/StevenMolina22/stellar-x402-paywall-kit), has its own `test/e2e.test.js` that runs a *real* payment through this CLI's underlying logic against the live OZ Channels testnet facilitator — skipped automatically without credentials, so it never breaks CI for anyone without a funded account. See [Proof of work](#proof-of-work) below for the transaction it produced.
+`test/e2e.test.js` adds 5 live tests that stand up a real paywall with the sibling [`stellar-x402-paywall-kit`](https://github.com/StevenMolina22/stellar-x402-paywall-kit) and pay it through this package's own `payUrl`, against the live OZ Channels testnet facilitator. They cover the happy path, a `--max-price` refusal, a cumulative session-cap refusal, and the amount actually charged. Running them needs the sibling repo checked out alongside this one plus a funded testnet payer:
+
+```bash
+OZ_API_KEY=... STELLAR_RECIPIENT=G... STELLAR_SECRET_KEY=S... npm test   # 60/60
+```
+
+Without either, those 5 skip and the suite stays green, so `npm test` never fails for someone who has neither.
+
+The live tests deliberately live *here* rather than in the seller kit. The buyer is what they exercise, and an earlier arrangement where the kit owned the only live test meant that test rebuilt its own x402 client by hand and never touched this package's code at all. See [Proof of work](#proof-of-work) for transactions these produced.
 
 ## Troubleshooting
 

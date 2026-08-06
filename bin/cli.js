@@ -101,9 +101,9 @@ async function main() {
     return;
   }
 
-  let response, settlement;
+  let response, settlement, amountPaid;
   try {
-    ({ response, settlement } = await payUrl(url, {
+    ({ response, settlement, amountPaid } = await payUrl(url, {
       ...requestInit,
       network: values.network,
       secretKey: values.secret,
@@ -126,7 +126,8 @@ async function main() {
 
   if (settlement) {
     const tx = settlement.transaction ?? settlement.txHash ?? settlement.tx;
-    process.stderr.write(`Paid. tx=${tx ?? "?"} network=${settlement.network ?? "?"}\n`);
+    const price = amountPaid ? ` amount=${baseUnitsToUsd(amountPaid)}` : "";
+    process.stderr.write(`Paid.${price} tx=${tx ?? "?"} network=${settlement.network ?? "?"}\n`);
   }
 
   logPaymentEvent(values["log-file"], {
@@ -134,8 +135,12 @@ async function main() {
     method: values.method,
     status: response.status,
     paid: Boolean(settlement),
-    amount: settlement?.amount,
+    // From the selected offer, not the settlement: PAYMENT-RESPONSE carries no
+    // amount, so this line used to record `undefined` on every single payment.
+    amountBaseUnits: amountPaid ?? undefined,
+    amountUsd: amountPaid ? baseUnitsToUsd(amountPaid) : undefined,
     network: settlement?.network,
+    payer: settlement?.payer,
     transaction: settlement?.transaction ?? settlement?.txHash ?? settlement?.tx,
   });
 
