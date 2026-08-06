@@ -28,7 +28,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "stellar",
@@ -48,9 +49,11 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@types/node": "^26.1.2",
     "@x402/express": "^2.20.0",
     "express": "^5.2.1",
     "stellar-x402-paywall-kit": "^0.1.0",
+    "typescript": "^7.0.2",
     "zod": "^3.23.8"
   }
 }

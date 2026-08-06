@@ -19,10 +19,13 @@ import { baseUnitsToUsd } from "./money.js";
  */
 export class SessionCapGuard {
   #cap;
+  /** @type {WeakMap<object, bigint>} */
   #reservedFor = new WeakMap();
+  /** @type {SessionCapExceededError|null} */
   #lastError = null;
   // Tracked alongside #reservedFor because a WeakMap can't be read without the
   // challenge object, and reconcile() runs after payUrl has returned.
+  /** @type {bigint|null} */
   #lastReservedAmount = null;
 
   /** @param {import("./sessionCap.js").SessionSpendCap} cap */
@@ -42,6 +45,9 @@ export class SessionCapGuard {
   /**
    * Register on an x402 client via `onBeforePaymentCreation` (or pass as
    * `onBeforePayment` to createPaidFetch/payUrl).
+   *
+   * @param {import("./pay.js").PaymentContext} context
+   * @returns {Promise<void | {abort: true, reason: string}>}
    */
   beforePayment = async (context) => {
     // createPaymentPayload can run twice for one purchase: if payload creation
@@ -51,9 +57,12 @@ export class SessionCapGuard {
     if (this.#reservedFor.has(context.paymentRequired)) return;
 
     const amount = amountOf(context.selectedRequirements ?? {});
+    /** @type {bigint|null} */
     let parsed;
     try {
-      parsed = BigInt(amount);
+      // A missing amount lands in the same place a BigInt() throw does: null, and
+      // then the fail-closed branch below.
+      parsed = amount == null ? null : BigInt(amount);
     } catch {
       parsed = null;
     }
@@ -63,11 +72,12 @@ export class SessionCapGuard {
       // reservation entirely and pay anyway, which is the one direction a spend
       // guard must never fail in. With no cap set there is nothing to enforce.
       if (!this.#cap.hasCap) return;
-      this.#lastError = new SessionCapExceededError(
+      const refusal = new SessionCapExceededError(
         `Refusing to pay: the selected offer has no readable amount (got ${JSON.stringify(amount)}), ` +
           `so it cannot be checked against the session cap.`
       );
-      return { abort: true, reason: this.#lastError.message };
+      this.#lastError = refusal;
+      return { abort: true, reason: refusal.message };
     }
 
     try {
@@ -93,6 +103,8 @@ export class SessionCapGuard {
    * connection): at that point it is unknown whether settlement happened, and a
    * budget that guesses "no" can be talked into overspending. Holding the
    * reservation can only under-spend, which is the safe direction to be wrong in.
+   *
+   * @param {{paymentRequired: object}} context
    */
   paymentFailure = async (context) => {
     const reserved = this.#reservedFor.get(context.paymentRequired);
@@ -113,8 +125,8 @@ export class SessionCapGuard {
    * if a facilitator ever does report a settled amount, the one thing worth knowing is
    * whether it disagrees. Wire it up rather than trust the reservation forever.
    *
-   * @param {{amount?: string|number|bigint}|null} settlement
-   * @returns {{drift: bigint, reservedUsd: string, settledUsd: string}|null}
+   * @param {import("./pay.js").Settlement|null} [settlement]
+   * @returns {Promise<{drift: bigint, reservedUsd: string, settledUsd: string}|null>}
    */
   async reconcile(settlement) {
     if (settlement?.amount == null) return null;

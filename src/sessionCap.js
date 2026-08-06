@@ -1,6 +1,7 @@
 import { usdToBaseUnits, baseUnitsToUsd } from "./money.js";
 
 export class SessionCapExceededError extends Error {
+  /** @param {string} message */
   constructor(message) {
     super(message);
     this.name = "SessionCapExceededError";
@@ -30,6 +31,7 @@ export class SessionCapExceededError extends Error {
 export class SessionSpendCap {
   #capBaseUnits;
   #spentBaseUnits = 0n;
+  /** @type {Promise<void>} */
   #queue = Promise.resolve();
 
   /**
@@ -44,11 +46,19 @@ export class SessionSpendCap {
     return this.#capBaseUnits != null;
   }
 
+  /**
+   * @template T
+   * @param {() => T | PromiseLike<T>} fn
+   * @returns {Promise<T>}
+   */
   #serialize(fn) {
     const result = this.#queue.then(fn);
     // Swallow rejections in the chain itself so one failed reservation doesn't
     // wedge the queue for subsequent calls; callers still see their own rejection.
-    this.#queue = result.catch(() => {});
+    this.#queue = result.then(
+      () => {},
+      () => {}
+    );
     return result;
   }
 
@@ -70,14 +80,17 @@ export class SessionSpendCap {
           `Session cap exceeded: this payment (${baseUnitsToUsd(amountBaseUnits)}) would bring ` +
             `cumulative spend to ${baseUnitsToUsd(this.#spentBaseUnits + amountBaseUnits)}, ` +
             `over the ${baseUnitsToUsd(this.#capBaseUnits)} session cap ` +
-            `(${baseUnitsToUsd(this.remainingBaseUnits())} remaining).`
+            `(${baseUnitsToUsd(this.remainingBaseUnits() ?? 0n)} remaining).`
         );
       }
       this.#spentBaseUnits += amountBaseUnits;
     });
   }
 
-  /** Give back a reservation for a payment that failed after `reserve()` succeeded. */
+  /**
+   * Give back a reservation for a payment that failed after `reserve()` succeeded.
+   * @param {bigint} amountBaseUnits
+   */
   release(amountBaseUnits) {
     return this.#serialize(() => {
       this.#spentBaseUnits -= amountBaseUnits;

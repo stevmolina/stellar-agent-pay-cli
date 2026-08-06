@@ -14,7 +14,7 @@ import { withRetry } from "./resilientFetch.js";
  * @property {string|number} [maxPriceUsd] - Refuse (filter out) any payment option above this USD amount.
  * @property {string[]} [allowRecipients] - If set, only pay a payTo in this list.
  * @property {string[]} [blockRecipients] - Never pay a payTo in this list, even if otherwise valid.
- * @property {(context: {paymentRequired: object, selectedRequirements: object}) => Promise<void | {abort: true, reason: string}>} [onBeforePayment]
+ * @property {(context: PaymentContext) => Promise<void | {abort: true, reason: string}>} [onBeforePayment]
  *   Called once the client has chosen which offer to pay, and before anything is signed.
  *   Return `{ abort, reason }` to refuse. This is the only place that sees the offer
  *   actually being paid, which is why the session cap hooks in here (see spendGuard.js).
@@ -24,13 +24,47 @@ import { withRetry } from "./resilientFetch.js";
  */
 
 /**
+ * The decoded x402 wire shapes, taken from @x402/core rather than hand-written
+ * here: its header decoders already return exactly these, so re-describing them
+ * would just be a second copy free to drift from the protocol.
+ *
+ * @typedef {import("@x402/core/types").PaymentRequirements} PaymentRequirements
+ * @typedef {import("@x402/core/types").PaymentRequired} PaymentRequired
+ */
+
+/**
+ * A decoded PAYMENT-RESPONSE header.
+ *
+ * Worth reading `SettleResponse` at the source: it declares `amount` optional and
+ * present only for schemes where the settled figure can differ from the authorized
+ * one. The "exact" scheme this package uses is not one of them, which is the same
+ * fact the e2e test pins, now enforced by the compiler rather than by memory.
+ *
+ * `txHash` and `tx` are not protocol fields. They are tolerated because the CLI has
+ * always read them as fallbacks, and deleting them here would be a behaviour change
+ * dressed up as a type fix.
+ *
+ * @typedef {import("@x402/core/types").SettleResponse & {txHash?: string, tx?: string}} Settlement
+ */
+
+/**
+ * What the x402 client hands a before-payment hook once it has picked an offer.
+ * @typedef {Object} PaymentContext
+ * @property {object} paymentRequired - The challenge object, used as a per-purchase identity key.
+ * @property {PaymentRequirements} [selectedRequirements] - The offer that will actually be paid.
+ */
+
+/**
  * Read a PaymentRequirements' price. The wire-format field is `amount` — confirmed
  * against a live facilitator response — NOT `maxAmountRequired`, which is a
  * *different* type in @x402/core (server-side RouteConfig), not this client-side
  * shape. Kept as a named export + the `?? maxAmountRequired` fallback specifically
  * because this was shipped wrong once (see test/pay.test.js) and silently filtered
  * out every payment option regardless of the cap.
- * @param {Record<string, unknown>} requirement
+ * The parameter is typed looser than PaymentRequirements on purpose: the protocol
+ * type has no `maxAmountRequired` at all, which is exactly why the fallback exists.
+ * @param {{amount?: string|number|bigint, maxAmountRequired?: string|number|bigint}} [requirement]
+ * @returns {string|number|bigint|undefined}
  */
 export function amountOf(requirement) {
   return requirement?.amount ?? requirement?.maxAmountRequired;
@@ -44,10 +78,12 @@ export function amountOf(requirement) {
  */
 export function buildMaxPricePolicy(capUsd) {
   const capBaseUnits = usdToBaseUnits(capUsd);
-  return (_x402Version, requirements) =>
+  return (/** @type {number} */ _x402Version, /** @type {PaymentRequirements[]} */ requirements) =>
     requirements.filter((r) => {
       try {
-        return BigInt(amountOf(r)) <= capBaseUnits;
+        const amount = amountOf(r);
+        // An unreadable price fails closed, same as a BigInt() throw below.
+        return amount != null && BigInt(amount) <= capBaseUnits;
       } catch {
         return false;
       }
@@ -66,10 +102,14 @@ export function buildMaxPricePolicy(capUsd) {
 export function buildRecipientPolicy({ allow, block } = {}) {
   const allowSet = allow?.length ? new Set(allow) : null;
   const blockSet = block?.length ? new Set(block) : null;
-  return (_x402Version, requirements) =>
+  return (/** @type {number} */ _x402Version, /** @type {PaymentRequirements[]} */ requirements) =>
     requirements.filter((r) => {
-      if (blockSet?.has(r.payTo)) return false;
-      if (allowSet && !allowSet.has(r.payTo)) return false;
+      // Cast rather than guard on null: an offer with no payTo has always been
+      // let through when no allow-list is configured, and tightening that here
+      // would be a behaviour change smuggled in under a type annotation.
+      const payTo = /** @type {string} */ (r.payTo);
+      if (blockSet?.has(payTo)) return false;
+      if (allowSet && !allowSet.has(payTo)) return false;
       return true;
     });
 }
@@ -82,7 +122,12 @@ export function buildRecipientPolicy({ allow, block } = {}) {
  * @returns {typeof fetch}
  */
 export function createPaidFetch(opts = {}) {
-  const network = opts.network ?? process.env.STELLAR_NETWORK ?? "stellar:testnet";
+  // The CAIP-2 template literal type is what @x402/stellar wants. The value can only
+  // ever arrive here as a plain string (a CLI flag or an env var), so it is asserted
+  // once, here, instead of at each of the two call sites below.
+  const network = /** @type {`${string}:${string}`} */ (
+    opts.network ?? process.env.STELLAR_NETWORK ?? "stellar:testnet"
+  );
   const secretKey = opts.secretKey ?? process.env.STELLAR_SECRET_KEY;
 
   if (!secretKey) {
@@ -129,7 +174,7 @@ export function createPaidFetch(opts = {}) {
  *
  * @param {string} url
  * @param {RequestInit} [init]
- * @returns {Promise<{ status: number, requirements: unknown } | { status: number, requirements: null }>}
+ * @returns {Promise<{ status: number, requirements: PaymentRequired | null }>}
  */
 export async function peekPaymentRequirements(url, init = {}) {
   const res = await fetch(url, init);
@@ -148,7 +193,9 @@ export async function peekPaymentRequirements(url, init = {}) {
       // fall through to the body below
     }
   }
-  const body = await res.json().catch(() => null);
+  // Asserted, not validated: this is the last-resort path for a server that put the
+  // challenge in the body instead of the header, so its shape is whatever was sent.
+  const body = /** @type {PaymentRequired|null} */ (await res.json().catch(() => null));
   return { status: 402, requirements: body };
 }
 
@@ -163,7 +210,7 @@ export async function peekPaymentRequirements(url, init = {}) {
  *
  * @param {string} url
  * @param {RequestInit & AgentPayOptions} [options]
- * @returns {Promise<{ response: Response, settlement: unknown, amountPaid: string|null }>}
+ * @returns {Promise<{ response: Response, settlement: Settlement|null, amountPaid: string|null }>}
  */
 export async function payUrl(url, options = {}) {
   const {
@@ -179,7 +226,9 @@ export async function payUrl(url, options = {}) {
   // Records the price of the offer the client chose, then defers to the caller's own
   // hook (so a spend guard can still refuse). Runs first so the amount is captured
   // even when the guard goes on to abort.
+  /** @type {string|null} */
   let amountPaid = null;
+  /** @param {PaymentContext} context */
   const recordThenDelegate = async (context) => {
     const amount = amountOf(context.selectedRequirements ?? {});
     if (amount != null) amountPaid = String(amount);
@@ -197,6 +246,7 @@ export async function payUrl(url, options = {}) {
   });
   const response = await fetchWithPayment(url, init);
 
+  /** @type {Settlement|null} */
   let settlement = null;
   const header = response.headers.get("PAYMENT-RESPONSE") ?? response.headers.get("payment-response");
   if (header) {

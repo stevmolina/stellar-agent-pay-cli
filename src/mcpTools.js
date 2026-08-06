@@ -35,10 +35,12 @@ export function configFromEnv(env = process.env) {
   };
 }
 
+/** @param {unknown} value */
 const text = (value) => ({
   content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }],
 });
 
+/** @param {string} message */
 const failure = (message) => ({ content: [{ type: "text", text: message }], isError: true });
 
 /**
@@ -74,7 +76,7 @@ export function registerTools(server, options = {}) {
         "GETs a URL and, if it responds 402 Payment Required, returns the price/recipient/network without paying. Use before pay_url to let the agent decide whether the price is worth it.",
       inputSchema: { url: z.string().url() },
     },
-    async ({ url }) => {
+    async (/** @type {{url: string}} */ { url }) => {
       const { status, requirements } = await peek(url);
       if (status !== 402) return text(`No payment required (status ${status}).`);
       const priced = (requirements?.accepts ?? []).map((a) => {
@@ -100,7 +102,7 @@ export function registerTools(server, options = {}) {
           .describe('Refuse to pay more than this many USD for this one call, e.g. "0.01".'),
       },
     },
-    async ({ url, method, maxPriceUsd }) => {
+    async (/** @type {{url: string, method?: string, maxPriceUsd?: string}} */ { url, method, maxPriceUsd }) => {
       // The cap is enforced inside the payment flow, at the point where the client
       // has picked its offer and before it signs. That is why there is no separate
       // price peek here any more: peeking and paying were two independent

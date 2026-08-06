@@ -27,7 +27,8 @@ export function logPaymentEvent(logFile, event) {
     fs.appendFileSync(logFile, line + "\n");
     return true;
   } catch (err) {
-    process.stderr.write(`warning: could not write payment log to ${logFile}: ${err.message}\n`);
+    const reason = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`warning: could not write payment log to ${logFile}: ${reason}\n`);
     return false;
   }
 }

@@ -6,8 +6,10 @@
 // (including an already-signed X-PAYMENT header, if present), which is safe.
 const RETRYABLE_CODES = new Set(["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN", "UND_ERR_SOCKET"]);
 
+/** @param {unknown} err */
 function isRetryableError(err) {
-  const code = err?.cause?.code ?? err?.code;
+  const e = /** @type {{ cause?: { code?: string }, code?: string } | undefined | null} */ (err);
+  const code = e?.cause?.code ?? e?.code;
   return code ? RETRYABLE_CODES.has(code) : false;
 }
 
@@ -33,7 +35,7 @@ export function withRetry(baseFetch, opts = {}) {
       } catch (err) {
         lastErr = err;
         if (!isRetryableError(err) || attempt === retries) throw err;
-        opts.onRetry?.(attempt + 1, err);
+        opts.onRetry?.(attempt + 1, /** @type {Error} */ (err));
         await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
       }
     }

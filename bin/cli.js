@@ -35,7 +35,12 @@ Examples:
   stellar-agent-pay https://api.example.com/weather --log-file ~/.stellar-agent-pay/payments.jsonl
 `;
 
+/**
+ * @param {string[]} headerArgs
+ * @returns {Record<string, string>}
+ */
 function parseHeaders(headerArgs) {
+  /** @type {Record<string, string>} */
   const headers = {};
   for (const h of headerArgs) {
     const idx = h.indexOf(":");
@@ -112,7 +117,8 @@ async function main() {
       blockRecipients: values["block-recipient"],
     }));
   } catch (err) {
-    logPaymentEvent(values["log-file"], { url, method: values.method, paid: false, error: err.message });
+    const reason = err instanceof Error ? err.message : String(err);
+    logPaymentEvent(values["log-file"], { url, method: values.method, paid: false, error: reason });
     throw err;
   }
 
