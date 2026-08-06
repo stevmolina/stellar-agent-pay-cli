@@ -18,8 +18,8 @@
   "author": "leocagli",
   "main": "src/pay.js",
   "bin": {
-    "stellar-agent-pay": "./bin/cli.js",
-    "stellar-agent-pay-mcp": "./src/mcp.js"
+    "stellar-agent-pay": "bin/cli.js",
+    "stellar-agent-pay-mcp": "src/mcp.js"
   },
   "files": [
     "src",
