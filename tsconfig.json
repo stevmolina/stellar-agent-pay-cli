@@ -5,12 +5,13 @@
     "target": "es2022",
     "lib": ["es2023"],
     "types": ["node"],
-    "allowJs": true,
-    "checkJs": true,
     "strict": true,
-    "noEmit": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "verbatimModuleSyntax": true
   },
-  "include": ["src", "bin"]
+  // No outDir on purpose. Each .ts emits its .js as a sibling, at exactly the paths
+  // package.json's main/bin/files already name, so packaging never has to move.
+  // The emitted .js is gitignored and rebuilt by `npm run build`.
+  "include": ["src/**/*.ts", "bin/**/*.ts"]
 }

@@ -14,11 +14,13 @@ import path from "node:path";
  * than throwing: the money is already gone, so hiding the resource the user paid
  * for is strictly worse than an unwritten log line.
  *
- * @param {string|undefined} logFile - Path to append to. No-op if undefined.
- * @param {Record<string, unknown>} event
- * @returns {boolean} true if the line was written
+ * @param logFile Path to append to. No-op if undefined.
+ * @returns true if the line was written
  */
-export function logPaymentEvent(logFile, event) {
+export function logPaymentEvent(
+  logFile: string | undefined,
+  event: Record<string, unknown>
+): boolean {
   if (!logFile) return false;
   const line = JSON.stringify({ timestamp: new Date().toISOString(), ...event });
   try {

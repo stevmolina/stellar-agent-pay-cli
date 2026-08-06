@@ -1,5 +1,6 @@
 import { amountOf } from "./pay.js";
-import { SessionCapExceededError } from "./sessionCap.js";
+import type { PaymentContext, Settlement } from "./pay.js";
+import { SessionCapExceededError, SessionSpendCap } from "./sessionCap.js";
 import { baseUnitsToUsd } from "./money.js";
 
 /**
@@ -18,18 +19,14 @@ import { baseUnitsToUsd } from "./money.js";
  * all three: the amount reserved is the amount signed, by construction.
  */
 export class SessionCapGuard {
-  #cap;
-  /** @type {WeakMap<object, bigint>} */
-  #reservedFor = new WeakMap();
-  /** @type {SessionCapExceededError|null} */
-  #lastError = null;
+  #cap: SessionSpendCap;
+  #reservedFor = new WeakMap<object, bigint>();
+  #lastError: SessionCapExceededError | null = null;
   // Tracked alongside #reservedFor because a WeakMap can't be read without the
   // challenge object, and reconcile() runs after payUrl has returned.
-  /** @type {bigint|null} */
-  #lastReservedAmount = null;
+  #lastReservedAmount: bigint | null = null;
 
-  /** @param {import("./sessionCap.js").SessionSpendCap} cap */
-  constructor(cap) {
+  constructor(cap: SessionSpendCap) {
     this.#cap = cap;
   }
 
@@ -38,18 +35,17 @@ export class SessionCapGuard {
    * thrown hook error into a generic "Failed to create payment payload", losing
    * the type, so the guard keeps the typed original for the caller to report.
    */
-  get lastError() {
+  get lastError(): SessionCapExceededError | null {
     return this.#lastError;
   }
 
   /**
    * Register on an x402 client via `onBeforePaymentCreation` (or pass as
    * `onBeforePayment` to createPaidFetch/payUrl).
-   *
-   * @param {import("./pay.js").PaymentContext} context
-   * @returns {Promise<void | {abort: true, reason: string}>}
    */
-  beforePayment = async (context) => {
+  beforePayment = async (
+    context: PaymentContext
+  ): Promise<void | { abort: true; reason: string }> => {
     // createPaymentPayload can run twice for one purchase: if payload creation
     // fails and a recovery hook replaces it, the client rebuilds against the same
     // PaymentRequired object. Reserving per challenge, not per call, keeps one
@@ -57,8 +53,7 @@ export class SessionCapGuard {
     if (this.#reservedFor.has(context.paymentRequired)) return;
 
     const amount = amountOf(context.selectedRequirements ?? {});
-    /** @type {bigint|null} */
-    let parsed;
+    let parsed: bigint | null;
     try {
       // A missing amount lands in the same place a BigInt() throw does: null, and
       // then the fail-closed branch below.
@@ -103,10 +98,8 @@ export class SessionCapGuard {
    * connection): at that point it is unknown whether settlement happened, and a
    * budget that guesses "no" can be talked into overspending. Holding the
    * reservation can only under-spend, which is the safe direction to be wrong in.
-   *
-   * @param {{paymentRequired: object}} context
    */
-  paymentFailure = async (context) => {
+  paymentFailure = async (context: { paymentRequired: object }): Promise<void> => {
     const reserved = this.#reservedFor.get(context.paymentRequired);
     if (reserved == null) return;
     this.#reservedFor.delete(context.paymentRequired);
@@ -124,13 +117,12 @@ export class SessionCapGuard {
    * because the reservation is currently the *only* record of what a payment cost, so
    * if a facilitator ever does report a settled amount, the one thing worth knowing is
    * whether it disagrees. Wire it up rather than trust the reservation forever.
-   *
-   * @param {import("./pay.js").Settlement|null} [settlement]
-   * @returns {Promise<{drift: bigint, reservedUsd: string, settledUsd: string}|null>}
    */
-  async reconcile(settlement) {
+  async reconcile(
+    settlement?: Settlement | null
+  ): Promise<{ drift: bigint; reservedUsd: string; settledUsd: string } | null> {
     if (settlement?.amount == null) return null;
-    let settled;
+    let settled: bigint;
     try {
       settled = BigInt(settlement.amount);
     } catch {

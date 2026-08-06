@@ -1,5 +1,5 @@
 // The three MCP tool handlers, kept separate from the stdio transport wiring in
-// mcp.js so they can be unit-tested. Importing mcp.js used to open a connection as
+// mcp.ts so they can be unit-tested. Importing mcp.ts used to open a connection as
 // a side effect of the import, which meant the session-cap logic (the subtlest code
 // in this package) had no tests at all.
 import { z } from "zod";
@@ -8,11 +8,8 @@ import { baseUnitsToUsd } from "./money.js";
 import { SessionSpendCap } from "./sessionCap.js";
 import { SessionCapGuard } from "./spendGuard.js";
 
-/**
- * Parse a comma-separated address list from an env var.
- * @param {string|undefined} env
- */
-export function parseAddressList(env) {
+/** Parse a comma-separated address list from an env var. */
+export function parseAddressList(env: string | undefined): string[] {
   return env
     ? env
         .split(",")
@@ -25,9 +22,8 @@ export function parseAddressList(env) {
  * Read the operator's policy out of the environment. Recipient allow/block-lists
  * are set once when the server is launched, not passed per call, so the agent
  * decides what to buy while the operator decides who may be paid.
- * @param {Record<string, string|undefined>} [env]
  */
-export function configFromEnv(env = process.env) {
+export function configFromEnv(env: Record<string, string | undefined> = process.env) {
   return {
     sessionCapUsd: env.STELLAR_AGENT_PAY_SESSION_CAP_USD ?? null,
     allowRecipients: parseAddressList(env.STELLAR_AGENT_PAY_ALLOW_RECIPIENTS),
@@ -35,26 +31,27 @@ export function configFromEnv(env = process.env) {
   };
 }
 
-/** @param {unknown} value */
-const text = (value) => ({
+const text = (value: unknown) => ({
   content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }],
 });
 
-/** @param {string} message */
-const failure = (message) => ({ content: [{ type: "text", text: message }], isError: true });
+const failure = (message: string) => ({ content: [{ type: "text", text: message }], isError: true });
 
-/**
- * Register peek_paywall / pay_url / session_status on an MCP server.
- *
- * @param {{registerTool: Function}} server
- * @param {object} [options]
- * @param {string|number|null} [options.sessionCapUsd]
- * @param {string[]} [options.allowRecipients]
- * @param {string[]} [options.blockRecipients]
- * @param {typeof payUrl} [options.pay] - Injectable for tests.
- * @param {typeof peekPaymentRequirements} [options.peek] - Injectable for tests.
- */
-export function registerTools(server, options = {}) {
+export type RegisterToolsOptions = {
+  sessionCapUsd?: string | number | null;
+  allowRecipients?: string[];
+  blockRecipients?: string[];
+  /** Injectable for tests. */
+  pay?: typeof payUrl;
+  /** Injectable for tests. */
+  peek?: typeof peekPaymentRequirements;
+};
+
+/** Register peek_paywall / pay_url / session_status on an MCP server. */
+export function registerTools(
+  server: { registerTool: Function },
+  options: RegisterToolsOptions = {}
+) {
   const {
     sessionCapUsd = null,
     allowRecipients = [],
@@ -65,7 +62,7 @@ export function registerTools(server, options = {}) {
 
   // One cap for the whole process. Unlike the CLI (a fresh process per payment),
   // an MCP server is long-lived across a conversation, so it can track cumulative
-  // spend. See sessionCap.js for why this is app-level and not a chain guarantee.
+  // spend. See sessionCap.ts for why this is app-level and not a chain guarantee.
   const sessionCap = new SessionSpendCap(sessionCapUsd);
 
   server.registerTool(
@@ -76,7 +73,7 @@ export function registerTools(server, options = {}) {
         "GETs a URL and, if it responds 402 Payment Required, returns the price/recipient/network without paying. Use before pay_url to let the agent decide whether the price is worth it.",
       inputSchema: { url: z.string().url() },
     },
-    async (/** @type {{url: string}} */ { url }) => {
+    async ({ url }: { url: string }) => {
       const { status, requirements } = await peek(url);
       if (status !== 402) return text(`No payment required (status ${status}).`);
       const priced = (requirements?.accepts ?? []).map((a) => {
@@ -102,7 +99,15 @@ export function registerTools(server, options = {}) {
           .describe('Refuse to pay more than this many USD for this one call, e.g. "0.01".'),
       },
     },
-    async (/** @type {{url: string, method?: string, maxPriceUsd?: string}} */ { url, method, maxPriceUsd }) => {
+    async ({
+      url,
+      method,
+      maxPriceUsd,
+    }: {
+      url: string;
+      method?: string;
+      maxPriceUsd?: string;
+    }) => {
       // The cap is enforced inside the payment flow, at the point where the client
       // has picked its offer and before it signs. That is why there is no separate
       // price peek here any more: peeking and paying were two independent

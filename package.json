@@ -28,8 +28,12 @@
     "LICENSE"
   ],
   "scripts": {
+    "build": "tsc && chmod +x bin/cli.js src/mcp.js",
+    "clean": "rm -f src/*.js bin/*.js",
+    "typecheck": "tsc --noEmit",
+    "pretest": "npm run build",
     "test": "node --test",
-    "typecheck": "tsc --noEmit"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "stellar",

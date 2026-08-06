@@ -3,3 +3,8 @@ node_modules/
 *.log
 *.jsonl
 .DS_Store
+
+# Build output. Sources are .ts; these are emitted in place by `npm run build`
+# so package.json's main/bin/files can keep pointing at the same paths.
+src/*.js
+bin/*.js

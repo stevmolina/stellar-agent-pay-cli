@@ -35,13 +35,8 @@ Examples:
   stellar-agent-pay https://api.example.com/weather --log-file ~/.stellar-agent-pay/payments.jsonl
 `;
 
-/**
- * @param {string[]} headerArgs
- * @returns {Record<string, string>}
- */
-function parseHeaders(headerArgs) {
-  /** @type {Record<string, string>} */
-  const headers = {};
+function parseHeaders(headerArgs: string[]): Record<string, string> {
+  const headers: Record<string, string> = {};
   for (const h of headerArgs) {
     const idx = h.indexOf(":");
     if (idx === -1) {
@@ -91,7 +86,7 @@ async function main() {
   if (values["dry-run"]) {
     const { status, requirements } = await peekPaymentRequirements(url, requestInit);
     if (status !== 402) {
-      process.stderr.write(`No payment required — server responded ${status}.\n`);
+      process.stderr.write(`No payment required, server responded ${status}.\n`);
       process.exitCode = status >= 200 && status < 300 ? 0 : 2;
       return;
     }
@@ -123,7 +118,7 @@ async function main() {
   }
 
   const text = await response.text();
-  let body = text;
+  let body: unknown = text;
   try {
     body = JSON.parse(text);
   } catch {

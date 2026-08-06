@@ -3,10 +3,8 @@ const USDC_DECIMALS = 7;
 
 /**
  * Convert a human amount ("$0.01", "0.01", 0.01) to 7-decimal USDC base units.
- * @param {string|number} usd
- * @returns {bigint}
  */
-export function usdToBaseUnits(usd) {
+export function usdToBaseUnits(usd: string | number): bigint {
   const raw = typeof usd === "string" ? usd.trim().replace(/^\$/, "") : String(usd);
   if (!/^\d+(\.\d+)?$/.test(raw)) {
     throw new Error(`Invalid USD amount: "${usd}"`);
@@ -18,10 +16,8 @@ export function usdToBaseUnits(usd) {
 
 /**
  * Format 7-decimal USDC base units back to a human "$X.YYYYYYY" string, trimming trailing zeros.
- * @param {string|bigint|number} baseUnits
- * @returns {string}
  */
-export function baseUnitsToUsd(baseUnits) {
+export function baseUnitsToUsd(baseUnits: string | bigint | number): string {
   const n = BigInt(baseUnits);
   const divisor = 10n ** BigInt(USDC_DECIMALS);
   const whole = n / divisor;

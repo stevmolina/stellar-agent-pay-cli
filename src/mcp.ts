@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Optional bonus: expose the same 402 -> pay -> unlock loop as an MCP tool, so an
 // MCP-aware agent (Claude Code, etc.) can pay a paywall directly instead of shelling
-// out to the CLI. Same core (src/pay.js) as bin/cli.js, this is just a second transport.
+// out to the CLI. Same core (src/pay.ts) as bin/cli.ts, this is just a second transport.
 //
-// Deliberately thin: the tool logic lives in mcpTools.js so it can be tested without
+// Deliberately thin: the tool logic lives in mcpTools.ts so it can be tested without
 // opening a stdio connection. Everything here is wiring.
 //
 // Requires @modelcontextprotocol/sdk + zod (optionalDependencies) to use this entry point.
